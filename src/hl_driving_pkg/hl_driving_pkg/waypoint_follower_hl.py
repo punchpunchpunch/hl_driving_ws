@@ -35,7 +35,7 @@ class WaypointFollower(Node):
         # =====================src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260810_133045.csv
         self.file_dir = os.path.expanduser('~/hl_driving_ws/src/hl_driving_pkg/hl_driving_pkg/waypoints')
         self.rddf_files = [
-            'waypoints_20260810_132420.csv',  #1
+            'waypoints_20260810_133045.csv',  #1 waypoints_20260810_132420.csv
             'waypoints_20260810_133045.csv',  #2
             'waypoints_20260810_133411.csv',  #3
             'waypoints_20260810_013624.csv',  #4
