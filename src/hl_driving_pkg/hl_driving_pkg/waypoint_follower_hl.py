@@ -4,7 +4,6 @@ from rclpy.node import Node
 from std_msgs.msg import Int32
 from sensor_msgs.msg import NavSatFix
 from ublox_msgs.msg import NavPVT
-from std_msgs.msg import Int32, Bool
 from auto_car_msgs.msg import SteerMsg
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
@@ -13,12 +12,11 @@ from rclpy.qos import QoSProfile
 from rclpy.qos import DurabilityPolicy
 
 import os
-import sys
-import serial
 import math
 import time
 import csv
 import utm
+import subprocess
 
 class WaypointFollower(Node):
 
@@ -32,22 +30,17 @@ class WaypointFollower(Node):
 
         # =====================
         # load CSV waypoints
-        # =====================src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260810_133045.csv
+        # =====================
         self.file_dir = os.path.expanduser('~/hl_driving_ws/src/hl_driving_pkg/hl_driving_pkg/waypoints')
         self.rddf_files = [
-            'waypoints_20260810_133045.csv',  #1 waypoints_20260810_132420.csv
-            'waypoints_20260810_133045.csv',  #2
-            'waypoints_20260810_133411.csv',  #3
+            'waypoints_2026back.csv',  #1 waypoints_20260810_132420.csv
+            'waypoints_2026forward.csv',  #2 waypoints_20260810_133045.csv
+            'waypoints_2026forward.csv',  #3 waypoints_20260810_133411.csv
             'waypoints_20260810_013624.csv',  #4
             'waypoints_20260810_013624.csv',  #5
             'waypoints_20260810_013624.csv',  #6
             'waypoints_20260810_013624.csv'   #7
         ]
-
-        self.rddf_num = 0
-        self.lidar_result = 0
-
-        self.load_rddf()
 
         # =====================
         # internal state
@@ -56,6 +49,10 @@ class WaypointFollower(Node):
         self.ego_y = None
         self.ego_heading = None
         self.closest_idx = 0
+        self.flag = 0
+        self.rddf_num = 0
+        self.lidar_select = 0
+        self.rddf_finished = False
 
         self.lookahead_distance = 3.0   # lookahad (랩뷰에서는 2.5, 작은차는 1.0, 큰차는 일단 2m?)
         self.wheelbase = 0.7            # 대강 측정했을 때 70cm
@@ -65,8 +62,7 @@ class WaypointFollower(Node):
         self.steer_msg.steer = 0.0
         self.steer_msg.is_ok = True
 
-        self.origin_x = self.waypoints[0][0]
-        self.origin_y = self.waypoints[0][1]
+        self.load_rddf()
 
         # =====================
         # subscriptions
@@ -134,19 +130,6 @@ class WaypointFollower(Node):
     # =====================================================
     # Load Waypoints CSV
     # =====================================================
-    def load_rddf(self):
-        csv_path = os.path.join(self.file_dir, self.rddf_files[self.rddf_num])
-
-        self.waypoints = self.load_waypoints(csv_path)
-
-        self.closest_idx = 0
-
-        self.origin_x = self.waypoints[0][0]
-        self.origin_y = self.waypoints[0][1]
-
-        self.get_logger().info(
-            f'Loaded {len(self.waypoints)} waypoints from RDDF {self.rddf_num + 1}'
-        )              
 
     def load_waypoints(self, csv_path):
         if not os.path.isfile(csv_path):
@@ -161,41 +144,52 @@ class WaypointFollower(Node):
                 )
         return waypoints
 
+    def load_rddf(self):
+            csv_path = os.path.join(self.file_dir, self.rddf_files[self.rddf_num])
+    
+            self.waypoints = self.load_waypoints(csv_path)
+    
+            self.closest_idx = 0
+    
+            self.origin_x = self.waypoints[0][0]
+            self.origin_y = self.waypoints[0][1]
+    
+            self.get_logger().info(
+                f'Loaded {len(self.waypoints)} waypoints from RDDF {self.rddf_num + 1}'
+            )
+
     def load_next_rddf(self):
         if self.rddf_num == 0:
-            
-            if self.lidar_result == 0:
-                self.get_logger().info(
-                    'Waiting for lidar RDDF selection...'
-                )
-                return False
-
-            # True -> 2번 RDDF
-            if self.lidar_result == 2:
+            # 2번 RDDF
+            if self.lidar_select == 2:
                 self.rddf_num = 1
-                self.get_logger().info(
-                    'Lidar result = TRUE -> Loading RDDF 2'
-                )
-
-            # False -> 3번 RDDF
+            # 3번 RDDF
             else:
                 self.rddf_num = 2
-                self.get_logger().info(
-                    'Lidar result = FALSE -> Loading RDDF 3'
-                )
 
-            self.load_rddf()
+            self.get_logger().info(f'lidar_select = {self.lidar_select}')
+            self.lidar_select = 0
 
-            self.lidar_result = None
+        elif self.rddf_num == 1 or self.rddf_num == 2:
+            self.rddf_num = 3
 
-            return True
+        elif self.rddf_num == 3:
+            # 5번 RDDF
+            if self.lidar_select == 5:
+                self.rddf_num = 4
+            # 6번 RDDF
+            else:
+                self.rddf_num = 5
 
-        # 그 이후 RDDF
-        if self.rddf_num >= len(self.rddf_files) - 1:
+            self.get_logger().info(f'lidar_select = {self.lidar_select}')
+            self.lidar_select = 0
+
+        elif self.rddf_num == 4 or self.rddf_num == 5:
+            self.rddf_num = 6
+        elif self.rddf_num >= len(self.rddf_files) - 1:
             self.get_logger().info('All RDDF completed!')
             return False
 
-        self.rddf_num += 1
         self.load_rddf()
 
         return True
@@ -205,9 +199,11 @@ class WaypointFollower(Node):
     # =====================================================
 
     def lidar_select_callback(self, msg: Int32):
-        self.lidar_result = msg.data
+        self.lidar_select = msg.data
 
-        self.get_logger().info(f'Lidar RDDF select = {self.lidar_result}')
+        self.get_logger().info(
+            f'LiDAR selection updated: {self.lidar_select}'
+        )
 
     def gps_callback(self, msg: NavSatFix):
         #if msg.status.status < 0:
@@ -242,12 +238,15 @@ class WaypointFollower(Node):
             math.cos(self.ego_heading)
         )
 
-    # =====================================================
+    # =====================
     # Control Loop
-    # =====================================================
+    # =====================
     def control_loop(self):
         if None in (self.ego_x, self.ego_y, self.ego_heading):
             self.get_logger().info('No Input')
+            return
+
+        if self.rddf_finished:
             return
 
         # 1. closest waypoint
@@ -260,7 +259,8 @@ class WaypointFollower(Node):
 
         # 마지막 waypoint 도착하면 다음 RDDF 열기
         if self.closest_idx >= len(self.waypoints) - 1:
-            self.load_next_rddf()
+            if not self.load_next_rddf():
+                self.rddf_finished = True
             return
 
         # 2. lookahead target
@@ -279,19 +279,13 @@ class WaypointFollower(Node):
             self.lookahead_distance,
             self.wheelbase
         )
-
-        '''
-        # 4. steer(deg) -> hst 송신
-        hst = self.steer_to_hst(steer)
-        self.get_logger().info(f'heading={self.ego_heading:.3f}, steer={steer:.2f}, hst={hst}')
-        self.send_frame(self.speed, -hst)
-        '''
     
         # 4. steer(deg) 퍼블리시
-        self.get_logger().info(f'heading={self.ego_heading:.2f}, steer={steer:.2f}')       
+        #self.get_logger().info(f'heading={self.ego_heading:.2f}, steer={steer:.2f}')       
         self.steer_msg.steer = -steer
         self.gps_steer_publisher.publish(self.steer_msg)
 
+        # flag publish
         self.publish_flag()
 
         # RViz publish
@@ -299,9 +293,9 @@ class WaypointFollower(Node):
         self.publish_closest_waypoint()
         self.publish_target_waypoint(target_x, target_y)
 
-    # =====================================================
+    # =====================
     # Core Logic
-    # =====================================================
+    # =====================
     # 로컬 경로 + 로컬 경로 내 가장 가까운 waypoint 지정(현재 코드에서는 앞으로만. 뒤로 돌아갈 수 없음)
     def find_closest_waypoint(self, ego_x, ego_y, start, window):
         min_d = float('inf')
@@ -347,6 +341,9 @@ class WaypointFollower(Node):
 
         return steer_deg
 
+    # =====================
+    # RViz Publish
+    # =====================
     def publish_waypoints_path(self):
         path = Path()
         path.header.frame_id = 'map'
@@ -355,7 +352,7 @@ class WaypointFollower(Node):
         for wp in self.waypoints:
             pose = PoseStamped()
             pose.header.frame_id = 'map'
-            # === 상대좌표 적용 ===
+            # 상대좌표 적용
             pose.pose.position.x = wp[0] - self.origin_x
             pose.pose.position.y = wp[1] - self.origin_y
             pose.pose.position.z = 0.0
@@ -373,7 +370,7 @@ class WaypointFollower(Node):
         msg.pose.position.y = self.ego_y - self.origin_y
         msg.pose.position.z = 0.0
 
-        # yaw → quaternion (z축 회전만)
+        # yaw -> quaternion (z축 회전만)
         yaw = self.ego_heading
         msg.pose.orientation.z = math.sin(yaw / 2.0)
         msg.pose.orientation.w = math.cos(yaw / 2.0)
@@ -408,7 +405,18 @@ class WaypointFollower(Node):
 
     def publish_flag(self):
         flag = Int32()
-        self.flag = self.waypoints[self.closest_idx][2]
+
+        new_flag = self.waypoints[self.closest_idx][2]
+
+        if new_flag != self.flag:
+            self.get_logger().info(f'FLAG CHANGE: {self.flag} -> {new_flag}')
+            subprocess.Popen(
+                ['paplay', '/usr/share/sounds/freedesktop/stereo/bell.oga'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
+        self.flag = new_flag
         flag.data = self.flag
 
         self.waypoints_flag_pub.publish(flag)
