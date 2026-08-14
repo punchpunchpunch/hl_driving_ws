@@ -151,7 +151,7 @@ class UI(QWidget):
         layout.addWidget(self.count_label)
 
         # flag 버튼
-        for i in range(10):
+        for i in range(13):
             btn = QPushButton(f"Flag {i}")
             btn.setMinimumHeight(50)
             btn.clicked.connect(lambda _, flag=i: node.set_flag(flag))

@@ -21,8 +21,9 @@ class CommCar(Node):
         self.side_speed = 300
         self.fast_speed = 1000
         self.slow_speed = 300
-        self.back_speed = 400
+        self.back_speed = 300
         self.stop_speed = 0
+        self.stop_time = 6.0
         
         self.gps_ok = False
         self.lane_ok = False
@@ -146,54 +147,63 @@ class CommCar(Node):
     def control_loop(self):
 
         # 조향
-        if self.side_ok and self.flag == 10:    #lidar_side
+        if self.side_ok and self.flag == 7: #lidar_side
             steer = self.side_steer
             speed = self.side_speed
             mode = 'side'
         elif self.gps_ok:   #gps
-            steer = self.gps_steer
-            speed = self.gps_speed
             if self.flag == 1:
                 steer = -self.gps_steer
+            else: 
+                steer = self.gps_steer
+            speed = self.gps_speed
             mode = 'gps'
-        elif self.lane_ok: #lane
+        elif self.lane_ok and self.flag == 7: #lane
             steer = self.lane_steer
             speed = self.lane_speed
             mode = 'lane'
         else:
-            steer = self.gps_steer
-            speed = self.gps_speed
             if self.flag == 1:
-                steer = -self.gps_steer  
+                steer = -self.gps_steer
+            else: 
+                steer = self.gps_steer
+            speed = self.gps_speed
             mode = 'gps'
 
         # 속도
-        if self.flag == 11:  # 경사로 정지
-            if self.stop_start_time is None:
-                # 처음 flag==2가 되었을 때 시간 저장
-                self.stop_start_time = time.time()
-            if time.time() - self.stop_start_time < 3.0:
-                # 3초 동안 정지
-                speed = self.stop_speed
-                mode = mode + ' hill_stop'
-            else:
-                # 3초 후 출발
-                speed = self.gps_speed
-                mode = mode + ' hill_go'
-        if self.flag == 1: # 후진
-            speed = self.back_speed
         if self.flag == 2:   # 경사로 정지
+                    if self.stop_start_time is None:
+                        self.stop_start_time = time.time()
+                    if time.time() - self.stop_start_time < self.stop_time:
+                        speed = self.stop_speed
+                        mode = mode + ' hill_stop'
+                    else:
+                        speed = self.gps_speed
+                        mode = mode + ' hill_go'
+        elif self.flag == 10:  # 주차 정지
             if self.stop_start_time is None:
-                # 처음 flag==2가 되었을 때 시간 저장
                 self.stop_start_time = time.time()
-            if time.time() - self.stop_start_time < 3.0:
-                # 3초 동안 정지
+            if time.time() - self.stop_start_time < self.stop_time:
                 speed = self.stop_speed
-                mode = mode + ' hill_stop'
+                mode = mode + ' parking_stop'
             else:
-                # 3초 후 출발
                 speed = self.gps_speed
-                mode = mode + ' hill_go'
+                mode = mode + ' parking_go'
+        elif self.center_ok and self.flag == 4: # 긴급제동 정지
+            speed = self.stop_speed
+            mode = mode + ' center'
+        elif self.flag == 1: # 후진
+            speed = self.back_speed
+            mode = mode + ' back'
+        elif self.flag == 5: # 속도 느리게
+            speed = self.slow_speed
+            mode = mode + ' slow'
+        elif self.flag == 4: # 가속
+            speed = self.fast_speed
+            mode = mode + ' fast'
+        elif self.flag == 6: # 속도 빠르게
+            speed = self.fast_speed
+            mode = mode + ' fast'
     
         hst = self.steer_to_hst(steer)
 

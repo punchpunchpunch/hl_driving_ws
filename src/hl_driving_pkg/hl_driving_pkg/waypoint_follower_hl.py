@@ -29,13 +29,13 @@ class WaypointFollower(Node):
         self.declare_parameter('waypoint_csv', '')
 
         # =====================
-        # load CSV waypoints
+        # waypoints CSV file
         # =====================
         self.file_dir = os.path.expanduser('~/hl_driving_ws/src/hl_driving_pkg/hl_driving_pkg/waypoints')
         self.rddf_files = [
-            'waypoints_2026back.csv',  #1 waypoints_20260810_132420.csv
-            'waypoints_2026forward.csv',  #2 waypoints_20260810_133045.csv
-            'waypoints_2026forward.csv',  #3 waypoints_20260810_133411.csv
+            'waypoints_20260812_162603.csv',  #1 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_162603.csv
+            'waypoints_20260812_160905.csv',  #2 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_160905.csv
+            'waypoints_20260812_161444.csv',  #3 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_161444.csv
             'waypoints_20260810_013624.csv',  #4
             'waypoints_20260810_013624.csv',  #5
             'waypoints_20260810_013624.csv',  #6
@@ -53,6 +53,9 @@ class WaypointFollower(Node):
         self.rddf_num = 0
         self.lidar_select = 0
         self.rddf_finished = False
+
+        self.current_group = 0
+        self.waypoint_groups = []
 
         self.lookahead_distance = 3.0   # lookahad (랩뷰에서는 2.5, 작은차는 1.0, 큰차는 일단 2m?)
         self.wheelbase = 0.7            # 대강 측정했을 때 70cm
@@ -113,7 +116,6 @@ class WaypointFollower(Node):
             Int32, '/waypoints_flag', 10
         )
 
-        # 한번만 퍼블리시
         qos = QoSProfile(depth=1)
         qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
         self.waypoints_path_pub = self.create_publisher(
@@ -144,19 +146,159 @@ class WaypointFollower(Node):
                 )
         return waypoints
 
-    def load_rddf(self):
-            csv_path = os.path.join(self.file_dir, self.rddf_files[self.rddf_num])
-    
-            self.waypoints = self.load_waypoints(csv_path)
-    
-            self.closest_idx = 0
-    
-            self.origin_x = self.waypoints[0][0]
-            self.origin_y = self.waypoints[0][1]
-    
-            self.get_logger().info(
-                f'Loaded {len(self.waypoints)} waypoints from RDDF {self.rddf_num + 1}'
+    def create_waypoint_groups(self):
+
+        """
+        flag == 1  → 하나의 별도 trajectory
+        flag != 1  → 하나의 별도 trajectory
+        waypoint 순서상 연속된 구간을 하나의 group으로 취급
+        """
+
+        self.waypoint_groups = []
+
+        if not self.waypoints:
+            return
+
+        start_idx = 0
+
+        current_is_reverse = (self.waypoints[0][2] == 1)
+
+        for i in range(1, len(self.waypoints)):
+
+            is_reverse = (self.waypoints[i][2] == 1)
+
+            # flag == 1 / flag != 1 상태가 바뀌면
+            # 새로운 trajectory 시작
+            if is_reverse != current_is_reverse:
+
+                self.waypoint_groups.append(
+                    {
+                        'start': start_idx,
+                        'end': i - 1,
+                        'reverse': current_is_reverse
+                    }
+                )
+
+                start_idx = i
+                current_is_reverse = is_reverse
+
+        # 마지막 group
+        self.waypoint_groups.append(
+            {
+                'start': start_idx,
+                'end': len(self.waypoints) - 1,
+                'reverse': current_is_reverse
+            }
+        )
+
+        """
+        self.get_logger().info(
+            f'Trajectory groups: {len(self.waypoint_groups)}'
+        )
+
+        for i, group in enumerate(self.waypoint_groups):
+
+            group_type = (
+                'FLAG 1'
+                if group['reverse']
+                else 'FLAG != 1'
             )
+
+            self.get_logger().info(
+                f'  Group {i}: '
+                f'{group["start"]} ~ {group["end"]} '
+                f'({group_type})'
+            )
+        """
+
+    def load_rddf(self):
+            
+        csv_path = os.path.join(self.file_dir, self.rddf_files[self.rddf_num])
+    
+        self.waypoints = self.load_waypoints(csv_path)
+    
+        # flag == 1 / flag != 1 기준으로 trajectory group 생성
+        self.create_waypoint_groups()
+
+        # 첫 번째 group부터 시작
+        self.current_group = 0
+
+        self.closest_idx = (
+            self.waypoint_groups[0]['start']
+        )
+
+        self.origin_x = self.waypoints[0][0]
+        self.origin_y = self.waypoints[0][1]
+
+        group = self.waypoint_groups[
+            self.current_group
+        ]
+
+        group_type = (
+            'FLAG 1'
+            if group['reverse']
+            else 'FLAG != 1'
+        )
+
+        self.get_logger().info(
+            f'Loaded {len(self.waypoints)} waypoints '
+            f'from RDDF {self.rddf_num + 1}'
+        )
+
+        self.get_logger().info(
+            f'Start Group {self.current_group}: '
+            f'{group["start"]} ~ {group["end"]} '
+            f'({group_type})'
+        )
+
+    def load_next_group(self):
+
+        next_group = self.current_group + 1
+
+        # 현재 RDDF 안에 다음 group이 존재
+        if next_group < len(self.waypoint_groups):
+
+            self.current_group = next_group
+
+            group = self.waypoint_groups[
+                self.current_group
+            ]
+
+            # 새로운 trajectory의 시작점으로 이동
+            self.closest_idx = group['start']
+
+            group_type = (
+                'FLAG 1'
+                if group['reverse']
+                else 'FLAG != 1'
+            )
+
+            self.get_logger().info(
+                f'================================'
+            )
+
+            self.get_logger().info(
+                f'New trajectory group: '
+                f'{self.current_group}'
+            )
+
+            self.get_logger().info(
+                f'Waypoint range: '
+                f'{group["start"]} ~ {group["end"]}'
+            )
+
+            self.get_logger().info(
+                f'Type: {group_type}'
+            )
+
+            self.get_logger().info(
+                f'================================'
+            )
+
+            return True
+
+        # 현재 RDDF의 모든 group 완료
+        return False
 
     def load_next_rddf(self):
         if self.rddf_num == 0:
@@ -249,16 +391,26 @@ class WaypointFollower(Node):
         if self.rddf_finished:
             return
 
+        group = self.waypoint_groups[self.current_group]
+        group_start = group['start']
+        group_end = group['end']
+
         # 1. closest waypoint
         self.closest_idx = self.find_closest_waypoint(
             self.ego_x,
             self.ego_y,
             self.closest_idx,
+            group_start,
+            group_end,
             window=50
         )
 
         # 마지막 waypoint 도착하면 다음 RDDF 열기
-        if self.closest_idx >= len(self.waypoints) - 1:
+        if self.closest_idx >= group_end:
+            # 다음 group 존재
+            if self.load_next_group():
+                return
+            
             if not self.load_next_rddf():
                 self.rddf_finished = True
             return
@@ -266,7 +418,8 @@ class WaypointFollower(Node):
         # 2. lookahead target
         target_x, target_y, flag = self.find_target_PurePursuit(
             self.closest_idx,
-            self.lookahead_distance
+            self.lookahead_distance,
+            group_end
         )
 
         # 3. pure pursuit
@@ -297,12 +450,15 @@ class WaypointFollower(Node):
     # Core Logic
     # =====================
     # 로컬 경로 + 로컬 경로 내 가장 가까운 waypoint 지정(현재 코드에서는 앞으로만. 뒤로 돌아갈 수 없음)
-    def find_closest_waypoint(self, ego_x, ego_y, start, window):
+    def find_closest_waypoint(self, ego_x, ego_y, start, group_start, group_end, window):
         min_d = float('inf')
         idx = start
-        end = min(start + window, len(self.waypoints))
 
-        for i in range(start, end):
+        # 현재 group 안에서만 탐색
+        search_start = max(start, group_start)
+        search_end = min(start + window, group_end + 1)
+     
+        for i in range(search_start, search_end):
             dx = self.waypoints[i][0] - ego_x
             dy = self.waypoints[i][1] - ego_y
             d = dx*dx + dy*dy
@@ -313,22 +469,23 @@ class WaypointFollower(Node):
         return idx
 
     # Pure Pursuit: 가장 가까운 waypoint에서 lookahad만큼 앞에 있는 목표 waypoint 지정
-    def find_target_PurePursuit(self, idx, lookahead):
+    def find_target_PurePursuit(self, idx, lookahead, group_end):
         dist = 0.0
-        for i in range(idx, len(self.waypoints)-1):
+        for i in range(idx, group_end):
             dx = self.waypoints[i+1][0] - self.waypoints[i][0]
             dy = self.waypoints[i+1][1] - self.waypoints[i][1]
             seg = math.hypot(dx, dy)
             dist += seg
             if dist >= lookahead:
                 return self.waypoints[i+1]
-        return self.waypoints[-1]
+        return self.waypoints[group_end]
 
     # Pure Pursuit: Pure Pursuit 알고리즘으로 조향값 계산
     def compute_steer_PurePursuit(self, ego_x, ego_y, ego_heading, tgt_x, tgt_y, lookahead, wheelbase):
         dx = tgt_x - ego_x
         dy = tgt_y - ego_y
-        Ld = math.hypot(dx, dy)
+        Ld = max(math.hypot(dx, dy), 1.0)
+        #Ld = math.hypot(dx, dy)
 
         target_heading = math.atan2(dy, dx)
         alpha = target_heading - ego_heading
@@ -410,16 +567,23 @@ class WaypointFollower(Node):
 
         if new_flag != self.flag:
             self.get_logger().info(f'FLAG CHANGE: {self.flag} -> {new_flag}')
-            subprocess.Popen(
-                ['paplay', '/usr/share/sounds/freedesktop/stereo/bell.oga'],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
+            self.paplay_sound()
 
         self.flag = new_flag
         flag.data = self.flag
 
         self.waypoints_flag_pub.publish(flag)
+
+    def paplay_sound(self):
+        try:
+            subprocess.Popen(
+                [
+                    'paplay', '/usr/share/sounds/freedesktop/stereo/bell.oga'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        except Exception as e:
+            self.get_logger().error(f'Failed to play sound: {e}')
 
 def main(args=None):
     rclpy.init(args=args)
