@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 
 from sensor_msgs.msg import Image
-from auto_car_msgs.msg import SteerMsg
+from auto_driving_msgs.msg import SteerMsg
 
 from rclpy.qos import qos_profile_sensor_data
 from cv_bridge import CvBridge

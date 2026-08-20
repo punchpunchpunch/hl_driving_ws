@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 
 from std_msgs.msg import Int32
-from auto_car_msgs.msg import SteerMsg
+from auto_driving_msgs.msg import SteerMsg
 from ublox_msgs.msg import NavPVT
 from visualization_msgs.msg import Marker
 
@@ -16,7 +16,7 @@ class CommCar(Node):
         self.lane_steer = 0.0
         self.side_steer = 0.0
         
-        self.gps_speed = 700        # 차량 속도(아두이노 코드에도 속도 제한 있음)
+        self.gps_speed = 300        # 차량 속도(아두이노 코드에도 속도 제한 있음)
         self.lane_speed = 700
         self.side_speed = 300
         self.fast_speed = 1000
@@ -158,7 +158,7 @@ class CommCar(Node):
                 steer = self.gps_steer
             speed = self.gps_speed
             mode = 'gps'
-        elif self.lane_ok and self.flag == 7: #lane
+        elif self.lane_ok and self.flag == 12: #lane
             steer = self.lane_steer
             speed = self.lane_speed
             mode = 'lane'

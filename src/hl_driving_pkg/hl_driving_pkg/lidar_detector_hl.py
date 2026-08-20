@@ -7,7 +7,7 @@ from sklearn.cluster import DBSCAN
 from collections import deque
 
 from sensor_msgs.msg import LaserScan
-from auto_car_msgs.msg import SteerMsg
+from auto_driving_msgs.msg import SteerMsg
 from std_msgs.msg import Bool, Int32
 
 from geometry_msgs.msg import Point
@@ -20,13 +20,14 @@ class LidarObstacleDetector(Node):
     def __init__(self):
         super().__init__('lidar_obstacle_detector')
 
-        self.parking_flag = 8 # 아직 미정?
-        self.slot_min_points = 3 # 막혀 있는지 판단
+        self.t_parking_flag = 8 # 직각주차 플래그
+        self.p_parking_flag = 9 # 평행주차 플래그
+        self.slot_min_points = 5 # 막혀 있다고 판단하는 기준이 되는 포인트 수
         self.grid_size = 0.02
 
         # Center ROI
-        self.center_roi_x_min, self.center_roi_x_max = 0.3, 3.0
-        self.center_roi_y_width = 0.6  # 좌우 전체
+        self.center_roi_x_min, self.center_roi_x_max = 0.1, 3.0
+        self.center_roi_y_width = 2.4  # 좌우 전체
 
         # Slow ROI
         self.slow_roi_x_min, self.slow_roi_x_max = 0.0, 3.5
@@ -37,26 +38,26 @@ class LidarObstacleDetector(Node):
         self.side_roi_y_width = 2.0  # 좌우 전체
 
         # T-Parking ROI
-        self.slot1_x_min, self.slot1_x_max = -2.0, 0.0
-        self.slot1_y_min, self.slot1_y_max = -6.0, -2.0
+        self.t_slot1_x_min, self.t_slot1_x_max = 0.0, 2.0
+        self.t_slot1_y_min, self.t_slot1_y_max = 2.0, 6.0
 
-        """
-        self.t_parking_roi_x_min, self.t_parking_roi_x_max = 0.0, 6.0
-        self.t_parking_roi_y_width = 5.0  # 좌
-        """
-        self.parking_vote_window = 10
-        self.slot1_votes = deque(maxlen=self.parking_vote_window)
+        # P-Parking ROI
+        self.p_slot1_x_min, self.p_slot1_x_max = 1.0, 6.0
+        self.p_slot1_y_min, self.p_slot1_y_max = -1.0, 1.0
 
-        self.parking_target_slot = 0   # 0: 미결정, 1: Slot 1, 2: Slot 2
-        self.parking_decided = False
-        self.parking_prev_active = False
+
+        self.t_parking_target_slot = 0   # 0: 미결정, 1: Slot 1, 2: Slot 2
+        self.t_parking_decided = False
+
+        self.p_parking_target_slot = 0
+        self.p_parking_decided = False
 
         self.center_condition_start_time = None
         self.center_prev_detected = False   # 이전 상태
-        self.center_hold_active = False     # 5초 유지 상태
+        self.center_hold_active = False     # n초 유지 상태
         self.center_cooldown = False
         self.center_hold_start_time = 0.0   # 시작 시간
-        self.center_hold_duration = 3.0     # 유지 시간 (초)
+        self.center_hold_duration = 6.0     # 유지 시간 (초)
 
         self.center_steer_msg = SteerMsg()
         self.center_steer_msg.steer = 0.0
@@ -132,7 +133,7 @@ class LidarObstacleDetector(Node):
         valid_indices = (ranges > msg.range_min) & (ranges < msg.range_max) # boolean 배열
         r = ranges[valid_indices]
         theta = angles[valid_indices]
-        #theta = theta + np.pi
+        theta = theta + np.pi
 
         # 극좌표(Polar) -> 직교좌표(XY) 변환
         x = r * np.cos(theta) # 전방 거리
@@ -208,10 +209,10 @@ class LidarObstacleDetector(Node):
             current_time = time.time()
             condition = False
             
-            if len(center_points) > 20:
+            if len(center_points) > 5:
                 center = np.mean(center_points, axis=0)
                 spread = np.mean(np.linalg.norm(center_points - center, axis=1))
-                print(spread)
+                #print(spread)
                 if spread < 0.25:
                     condition = True
 
@@ -294,6 +295,71 @@ class LidarObstacleDetector(Node):
         return len(slot_points) >= self.slot_min_points
 
     def process_parking(self, points):
+        if self.flag == self.t_parking_flag:
+
+            self.get_logger().info("[PARKING] FLAG 8 ACTIVE")
+            
+            if self.t_parking_decided:
+                slot_msg = Int32()
+                slot_msg.data = self.t_parking_target_slot
+                self.lidar_rddf_select_publisher.publish(slot_msg)
+                return
+            
+            slot1_occupied = self.get_slot_occupancy(
+                points,
+                self.t_slot1_x_min, self.t_slot1_x_max,
+                self.t_slot1_y_min, self.t_slot1_y_max
+            )
+
+            if slot1_occupied:
+                self.t_parking_target_slot = 2
+            else:
+                self.t_parking_target_slot = 1
+
+            # 하나라도 주차 가능한 공간을 찾으면 선택 확정
+            if self.t_parking_target_slot != 0:
+                self.t_parking_decided = True
+
+            slot_msg = Int32()
+            slot_msg.data = self.t_parking_target_slot
+            self.lidar_rddf_select_publisher.publish(slot_msg)
+
+            self.get_logger().info(
+                f"[PARKING] target_slot={self.t_parking_target_slot}, RDDF={slot_msg.data}"
+            )
+
+        elif self.flag == self.p_parking_flag:
+
+            self.get_logger().info("[PARKING] FLAG 9 ACTIVE")
+            
+            if self.p_parking_decided:
+                slot_msg = Int32()
+                slot_msg.data = self.p_parking_target_slot
+                self.lidar_rddf_select_publisher.publish(slot_msg)
+                return
+            
+            slot1_occupied = self.get_slot_occupancy(
+                points,
+                self.p_slot1_x_min, self.p_slot1_x_max,
+                self.p_slot1_y_min, self.p_slot1_y_max
+            )
+
+            if slot1_occupied:
+                self.p_parking_target_slot = 2
+            else:
+                self.p_parking_target_slot = 1
+
+            # 하나라도 주차 가능한 공간을 찾으면 선택 확정
+            if self.p_parking_target_slot != 0:
+                self.p_parking_decided = True
+
+            slot_msg = Int32()
+            slot_msg.data = self.p_parking_target_slot
+            self.lidar_rddf_select_publisher.publish(slot_msg)
+
+            self.get_logger().info(
+                f"[PARKING] target_slot={self.p_parking_target_slot}, RDDF={slot_msg.data}"
+            )
         """
         parking_flag 구간에서 차량이 계속 주행하면서
         Slot 1 / Slot 2의 점유 여부를 여러 프레임 누적한다.
@@ -303,81 +369,6 @@ class LidarObstacleDetector(Node):
             /parking_slot = 2 -> Slot 2 선택
             /parking_slot = 0 -> 아직 미결정
         """
-
-        #self.get_logger().info(f"[PARKING CHECK] flag={self.flag}, points={len(points)}")
-
-        if self.flag != self.parking_flag:
-            return
-
-        self.get_logger().info("[PARKING] FLAG 8 ACTIVE")
-
-        if self.parking_decided:
-            slot_msg = Int32()
-            slot_msg.data = self.parking_target_slot + 1
-            self.lidar_rddf_select_publisher.publish(slot_msg)
-            return
-
-        slot1_occupied = self.get_slot_occupancy(
-            points,
-            self.slot1_x_min, self.slot1_x_max,
-            self.slot1_y_min, self.slot1_y_max
-        )
-
-        '''
-
-        # True = 막힘, False = 비어있음 후보
-        self.slot1_votes.append(slot1_occupied)
-        self.slot2_votes.append(slot2_occupied)
-
-        # 아직 충분한 프레임이 쌓이지 않았으면 결정하지 않음
-        if len(self.slot1_votes) < self.parking_vote_window:
-            return
-
-        slot1_occupied_count = sum(self.slot1_votes)
-        slot2_occupied_count = sum(self.slot2_votes)
-
-        # 과반수로 최종 점유 여부 결정
-        slot1_is_occupied = slot1_occupied_count >= (self.parking_vote_window // 2 + 1)
-        slot2_is_occupied = slot2_occupied_count >= (self.parking_vote_window // 2 + 1)
-
-        # 이미 선택했다면 주행 중 결과가 바뀌지 않도록 유지
-        if self.parking_decided:
-            return
-
-        if not slot1_is_occupied and slot2_is_occupied:
-            self.parking_target_slot = 1
-
-        elif slot1_is_occupied and not slot2_is_occupied:
-            self.parking_target_slot = 2
-
-        elif not slot1_is_occupied and not slot2_is_occupied:
-            # 둘 다 비어 있으면 기본적으로 Slot 1 선택
-            self.parking_target_slot = 1
-
-        else:
-            # 둘 다 막혀 있으면 0 유지
-            self.parking_target_slot = 0
-        '''
-
-        if slot1_occupied:
-            self.parking_target_slot = 2
-
-        elif not slot1_occupied:
-            self.parking_target_slot = 1
-        else:
-            self.parking_target_slot = 2
-
-        # 하나라도 주차 가능한 공간을 찾으면 선택 확정
-        if self.parking_target_slot != 0:
-            self.parking_decided = True
-
-        slot_msg = Int32()
-        slot_msg.data = self.parking_target_slot + 1
-        self.lidar_rddf_select_publisher.publish(slot_msg)
-
-        self.get_logger().info(
-            f"[PARKING] target_slot={self.parking_target_slot}, RDDF={slot_msg.data}"
-        )
 
     def publish_roi(self):
         marker = Marker()
@@ -417,38 +408,71 @@ class LidarObstacleDetector(Node):
 
         self.roi_pub.publish(marker)
 
-        parking_marker = Marker()
+        t_parking_marker = Marker()
 
-        parking_marker.header.frame_id = "laser"
-        parking_marker.header.stamp = self.get_clock().now().to_msg()
+        t_parking_marker.header.frame_id = "laser"
+        t_parking_marker.header.stamp = self.get_clock().now().to_msg()
 
-        parking_marker.ns = "roi"
-        parking_marker.id = 1
-        parking_marker.type = Marker.LINE_STRIP
-        parking_marker.action = Marker.ADD
+        t_parking_marker.ns = "roi"
+        t_parking_marker.id = 1
+        t_parking_marker.type = Marker.LINE_STRIP
+        t_parking_marker.action = Marker.ADD
 
-        parking_marker.scale.x = 0.03
+        t_parking_marker.scale.x = 0.03
 
         # T-Parking ROI 색상
-        parking_marker.color.r = 1.0
-        parking_marker.color.g = 0.0
-        parking_marker.color.b = 0.0
-        parking_marker.color.a = 1.0
+        t_parking_marker.color.r = 1.0
+        t_parking_marker.color.g = 0.0
+        t_parking_marker.color.b = 0.0
+        t_parking_marker.color.a = 1.0
 
-        x_min = self.slot1_x_min
-        x_max = self.slot1_x_max
-        y_min = self.slot1_y_min
-        y_max = self.slot1_y_max
+        x_min = self.t_slot1_x_min
+        x_max = self.t_slot1_x_max
+        y_min = self.t_slot1_y_min
+        y_max = self.t_slot1_y_max
 
-        parking_marker.points = [
-            Point(x=x_min, y=y_min, z=0.0),
-            Point(x=x_max, y=y_min, z=0.0),
-            Point(x=x_max, y=y_max, z=0.0),
-            Point(x=x_min, y=y_max, z=0.0),
-            Point(x=x_min, y=y_min, z=0.0)
+        t_parking_marker.points = [
+            Point(x=-x_min, y=-y_min, z=0.0),
+            Point(x=-x_max, y=-y_min, z=0.0),
+            Point(x=-x_max, y=-y_max, z=0.0),
+            Point(x=-x_min, y=-y_max, z=0.0),
+            Point(x=-x_min, y=-y_min, z=0.0)
         ]
 
-        self.roi_pub.publish(parking_marker)
+        self.roi_pub.publish(t_parking_marker)
+
+        p_parking_marker = Marker()
+
+        p_parking_marker.header.frame_id = "laser"
+        p_parking_marker.header.stamp = self.get_clock().now().to_msg()
+
+        p_parking_marker.ns = "roi"
+        p_parking_marker.id = 1
+        p_parking_marker.type = Marker.LINE_STRIP
+        p_parking_marker.action = Marker.ADD
+
+        p_parking_marker.scale.x = 0.03
+
+        # T-Parking ROI 색상
+        p_parking_marker.color.r = 1.0
+        p_parking_marker.color.g = 0.0
+        p_parking_marker.color.b = 0.0
+        p_parking_marker.color.a = 1.0
+
+        x_min = self.p_slot1_x_min
+        x_max = self.p_slot1_x_max
+        y_min = self.p_slot1_y_min
+        y_max = self.p_slot1_y_max
+
+        p_parking_marker.points = [
+            Point(x=-x_min, y=-y_min, z=0.0),
+            Point(x=-x_max, y=-y_min, z=0.0),
+            Point(x=-x_max, y=-y_max, z=0.0),
+            Point(x=-x_min, y=-y_max, z=0.0),
+            Point(x=-x_min, y=-y_min, z=0.0)
+        ]
+
+        self.roi_pub.publish(p_parking_marker)
 
 def main(args=None):
     rclpy.init(args=args)

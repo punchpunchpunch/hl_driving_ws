@@ -4,7 +4,7 @@ from rclpy.node import Node
 from std_msgs.msg import Int32
 from sensor_msgs.msg import NavSatFix
 from ublox_msgs.msg import NavPVT
-from auto_car_msgs.msg import SteerMsg
+from auto_driving_msgs.msg import SteerMsg
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
 
@@ -33,12 +33,12 @@ class WaypointFollower(Node):
         # =====================
         self.file_dir = os.path.expanduser('~/hl_driving_ws/src/hl_driving_pkg/hl_driving_pkg/waypoints')
         self.rddf_files = [
-            'waypoints_20260812_162603.csv',  #1 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_162603.csv
-            'waypoints_20260812_160905.csv',  #2 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_160905.csv
-            'waypoints_20260812_161444.csv',  #3 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_161444.csv
-            'waypoints_20260810_013624.csv',  #4
-            'waypoints_20260810_013624.csv',  #5
-            'waypoints_20260810_013624.csv',  #6
+            'waypoints_20260819_173627.csv',  #1 waypoints_20260819_115656.csv
+            'waypoints_20260819_115927.csv',  #2 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_160905.csv
+            'waypoints_20260819_120219.csv',  #3 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_161444.csv
+            'waypoints_20260819_161603.csv',  #4
+            'waypoints_20260819_161949.csv',  #5
+            'waypoints_20260819_162211.csv',  #6
             'waypoints_20260810_013624.csv'   #7
         ]
 
@@ -303,7 +303,7 @@ class WaypointFollower(Node):
     def load_next_rddf(self):
         if self.rddf_num == 0:
             # 2번 RDDF
-            if self.lidar_select == 2:
+            if self.lidar_select == 1:
                 self.rddf_num = 1
             # 3번 RDDF
             else:
@@ -317,7 +317,7 @@ class WaypointFollower(Node):
 
         elif self.rddf_num == 3:
             # 5번 RDDF
-            if self.lidar_select == 5:
+            if self.lidar_select == 1:
                 self.rddf_num = 4
             # 6번 RDDF
             else:
