@@ -16,14 +16,14 @@ class CommCar(Node):
         self.lane_steer = 0.0
         self.side_steer = 0.0
         
-        self.gps_speed = 300        # 차량 속도(아두이노 코드에도 속도 제한 있음)
+        self.gps_speed = 700        # 차량 속도(아두이노 코드에도 속도 제한 있음)
         self.lane_speed = 700
         self.side_speed = 300
         self.fast_speed = 1000
         self.slow_speed = 300
         self.back_speed = 300
         self.stop_speed = 0
-        self.stop_time = 6.0
+        self.stop_time = 4.0
         
         self.gps_ok = False
         self.lane_ok = False
@@ -192,6 +192,9 @@ class CommCar(Node):
         elif self.center_ok and self.flag == 4: # 긴급제동 정지
             speed = self.stop_speed
             mode = mode + ' center'
+        elif self.slow_ok and self.flag == 4:
+            speed = self.slow_speed
+            mode = mode + ' slow'
         elif self.flag == 1: # 후진
             speed = self.back_speed
             mode = mode + ' back'
@@ -204,6 +207,9 @@ class CommCar(Node):
         elif self.flag == 6: # 속도 빠르게
             speed = self.fast_speed
             mode = mode + ' fast'
+        elif self.slow_ok and self.flag == 7:
+            speed = self.slow_speed
+            mode = mode + ' slow'
     
         hst = self.steer_to_hst(steer)
 

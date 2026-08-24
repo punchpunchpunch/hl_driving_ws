@@ -3,7 +3,6 @@ from rclpy.node import Node
 
 import numpy as np
 import time
-from sklearn.cluster import DBSCAN
 from collections import deque
 
 from sensor_msgs.msg import LaserScan
@@ -26,8 +25,8 @@ class LidarObstacleDetector(Node):
         self.grid_size = 0.02
 
         # Center ROI
-        self.center_roi_x_min, self.center_roi_x_max = 0.1, 3.0
-        self.center_roi_y_width = 2.4  # 좌우 전체
+        self.center_roi_x_min, self.center_roi_x_max = 0.1, 4.0
+        self.center_roi_y_width = 1.4  # 좌우 전체
 
         # Slow ROI
         self.slow_roi_x_min, self.slow_roi_x_max = 0.0, 3.5
@@ -38,7 +37,7 @@ class LidarObstacleDetector(Node):
         self.side_roi_y_width = 2.0  # 좌우 전체
 
         # T-Parking ROI
-        self.t_slot1_x_min, self.t_slot1_x_max = 0.0, 2.0
+        self.t_slot1_x_min, self.t_slot1_x_max = 0.5, 2.0
         self.t_slot1_y_min, self.t_slot1_y_max = 2.0, 6.0
 
         # P-Parking ROI
@@ -158,12 +157,13 @@ class LidarObstacleDetector(Node):
         # 중복된 격자 키 제거 (격자당 포인트 1개 유지)
         _, indices = np.unique(keys, axis=0, return_index=True)
         return points[indices]
-
+    '''
     def clustering(self, points):
         if len(points) == 0:
             return np.array([])
         db = DBSCAN(eps=0.15, min_samples=5).fit(points)
         return db.labels_
+    '''
 
     def process_roi(self, points):
         self.center_steer_msg.is_ok = False
@@ -210,11 +210,8 @@ class LidarObstacleDetector(Node):
             condition = False
             
             if len(center_points) > 5:
-                center = np.mean(center_points, axis=0)
-                spread = np.mean(np.linalg.norm(center_points - center, axis=1))
-                #print(spread)
-                if spread < 0.25:
                     condition = True
+                    print(len(center_points))
 
             if condition:
                 # 처음 조건 들어온 순간
@@ -222,7 +219,7 @@ class LidarObstacleDetector(Node):
                     self.center_condition_start_time = current_time
 
                 # 3초 안 지났으면 정지 유지
-                if current_time - self.center_condition_start_time < 3.0:
+                if current_time - self.center_condition_start_time < 6.0:
                     self.center_steer_msg.steer = 0.0
                     self.center_steer_msg.is_ok = True
                 else:
@@ -280,7 +277,7 @@ class LidarObstacleDetector(Node):
 
         if len(slot_points) < self.slot_min_points:
             return False
-
+        """
         # DBSCAN으로 실제 물체가 뭉쳐 있는지 확인
         if len(slot_points) >= 5:
             labels = self.clustering(slot_points)
@@ -290,9 +287,11 @@ class LidarObstacleDetector(Node):
                 _, counts = np.unique(valid_labels, return_counts=True)
                 if np.max(counts) >= 5:
                     return True
+                    """
 
         # DBSCAN이 잘 안 되는 경우 그냥 점 개수로 판단
         return len(slot_points) >= self.slot_min_points
+    
 
     def process_parking(self, points):
         if self.flag == self.t_parking_flag:

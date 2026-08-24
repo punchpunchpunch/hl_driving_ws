@@ -33,13 +33,14 @@ class WaypointFollower(Node):
         # =====================
         self.file_dir = os.path.expanduser('~/hl_driving_ws/src/hl_driving_pkg/hl_driving_pkg/waypoints')
         self.rddf_files = [
-            'waypoints_20260819_173627.csv',  #1 waypoints_20260819_115656.csv
-            'waypoints_20260819_115927.csv',  #2 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_160905.csv
-            'waypoints_20260819_120219.csv',  #3 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_161444.csv
-            'waypoints_20260819_161603.csv',  #4
-            'waypoints_20260819_161949.csv',  #5
-            'waypoints_20260819_162211.csv',  #6
-            'waypoints_20260810_013624.csv'   #7
+            'waypoints_20260822_161530.csv',  #1 waypoints_20260819_115656.csv  waypoints_20260819_173627.csv긴급정지테스트 waypoints_20260820_165647.csv에스자회피테스트
+            'waypoints_20260822_162831.csv',  #2 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_160905.csv
+            'waypoints_20260822_163138.csv',  #3 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_161444.csv
+            'waypoints_20260822_163501.csv',  #4
+            'waypoints_20260822_164818.csv',  #5
+            'waypoints_20260822_165057.csv',  #6
+            'waypoints_20260822_165217.csv',  #7
+            'waypoints_20260822_165217.csv'   #8
         ]
 
         # =====================
@@ -50,7 +51,7 @@ class WaypointFollower(Node):
         self.ego_heading = None
         self.closest_idx = 0
         self.flag = 0
-        self.rddf_num = 0
+        self.rddf_num = 1
         self.lidar_select = 0
         self.rddf_finished = False
 
@@ -60,6 +61,7 @@ class WaypointFollower(Node):
         self.lookahead_distance = 3.0   # lookahad (랩뷰에서는 2.5, 작은차는 1.0, 큰차는 일단 2m?)
         self.wheelbase = 0.7            # 대강 측정했을 때 70cm
         self.control_rate = 20.0        # 제어루프 주기
+        self.min_lookahead = 1.5
 
         self.steer_msg = SteerMsg()
         self.steer_msg.steer = 0.0
@@ -213,7 +215,7 @@ class WaypointFollower(Node):
 
     def load_rddf(self):
             
-        csv_path = os.path.join(self.file_dir, self.rddf_files[self.rddf_num])
+        csv_path = os.path.join(self.file_dir, self.rddf_files[self.rddf_num - 1])
     
         self.waypoints = self.load_waypoints(csv_path)
     
@@ -301,34 +303,43 @@ class WaypointFollower(Node):
         return False
 
     def load_next_rddf(self):
-        if self.rddf_num == 0:
+        if self.rddf_num == 1:
             # 2번 RDDF
             if self.lidar_select == 1:
-                self.rddf_num = 1
+                self.rddf_num = 2
             # 3번 RDDF
             else:
-                self.rddf_num = 2
+                self.rddf_num = 3
 
             self.get_logger().info(f'lidar_select = {self.lidar_select}')
             self.lidar_select = 0
 
-        elif self.rddf_num == 1 or self.rddf_num == 2:
-            self.rddf_num = 3
+        elif self.rddf_num == 2 or self.rddf_num == 3:
+            self.rddf_num = 4
 
-        elif self.rddf_num == 3:
+        elif self.rddf_num == 4:
             # 5번 RDDF
             if self.lidar_select == 1:
-                self.rddf_num = 4
+                self.rddf_num = 5
             # 6번 RDDF
             else:
-                self.rddf_num = 5
+                self.rddf_num = 6
 
             self.get_logger().info(f'lidar_select = {self.lidar_select}')
             self.lidar_select = 0
 
-        elif self.rddf_num == 4 or self.rddf_num == 5:
-            self.rddf_num = 6
-        elif self.rddf_num >= len(self.rddf_files) - 1:
+        elif self.rddf_num == 5 or self.rddf_num == 6:
+            # 7번 RDDF
+            if True:
+                self.rddf_num = 7
+            # 8번 RDDF
+            else:
+                self.rddf_num = 8
+
+            self.get_logger().info(f'lidar_select = {self.lidar_select}')
+            self.lidar_select = 0
+
+        elif self.rddf_num >= len(self.rddf_files):
             self.get_logger().info('All RDDF completed!')
             return False
 
@@ -484,7 +495,7 @@ class WaypointFollower(Node):
     def compute_steer_PurePursuit(self, ego_x, ego_y, ego_heading, tgt_x, tgt_y, lookahead, wheelbase):
         dx = tgt_x - ego_x
         dy = tgt_y - ego_y
-        Ld = max(math.hypot(dx, dy), 1.0)
+        Ld = max(math.hypot(dx, dy), self.min_lookahead)
         #Ld = math.hypot(dx, dy)
 
         target_heading = math.atan2(dy, dx)
