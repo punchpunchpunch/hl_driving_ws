@@ -244,7 +244,7 @@ class WaypointFollower(Node):
 
         self.get_logger().info(
             f'Loaded {len(self.waypoints)} waypoints '
-            f'from RDDF {self.rddf_num + 1}'
+            f'from RDDF {self.rddf_num}'
         )
 
         self.get_logger().info(

@@ -12,6 +12,8 @@ find_package(rosidl_default_generators REQUIRED)
 # Generate msg
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/SteerMsg.msg"
+  "msg/TrafficLightMsg.msg"
+  "msg/TrafficSignMsg.msg"
 )
 
 if(BUILD_TESTING)
