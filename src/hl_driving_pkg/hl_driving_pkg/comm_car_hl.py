@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 
 from std_msgs.msg import Int32
-from auto_driving_msgs.msg import SteerMsg
+from auto_driving_msgs.msg import SteerMsg, TrafficLightMsg
 from ublox_msgs.msg import NavPVT
 from visualization_msgs.msg import Marker
 
@@ -42,6 +42,10 @@ class CommCar(Node):
         self.flag = 0
 
         self.stop_start_time = None
+
+        self.traffic_light = ""
+        self.traffic_light_confidence = 0.0
+        self.traffic_light_stop = False
 
         # =====================
         # car serial
@@ -94,6 +98,13 @@ class CommCar(Node):
             10 # 큐 크기
         )
 
+        self.traffic_light_subscription = self.create_subscription(
+            TrafficLightMsg,
+            '/traffic_light_result',
+            self.traffic_light_callback,
+            10
+        )
+
         self.rtk_subscription = self.create_subscription(
             NavPVT,
             '/ublox_gps_node/navpvt', 
@@ -140,6 +151,15 @@ class CommCar(Node):
 
     def lidar_center_steer_callback(self, msg: SteerMsg):
         self.center_ok = msg.is_ok
+
+    def traffic_light_callback(self, msg: TrafficLightMsg):
+        self.traffic_light = msg.label
+        self.traffic_light_confidence = msg.confidence
+
+        if msg.label in ['red', 'yellow']:
+            self.traffic_light_stop = True
+        else:
+            self.traffic_light_stop = False
 
     # =====================================================
     # Control Loop
@@ -190,6 +210,9 @@ class CommCar(Node):
                 speed = self.gps_speed
                 mode = mode + ' parking_go'
         elif self.center_ok and self.flag == 4: # 긴급제동 정지
+            speed = self.stop_speed
+            mode = mode + ' center'
+        elif self.traffic_light_stop and self.flag == 3: # 신호등 정지
             speed = self.stop_speed
             mode = mode + ' center'
         elif self.slow_ok and self.flag == 4:

@@ -33,11 +33,11 @@ class VisionAI(Node):
         )
 
         self.traffic_light_publisher = self.create_publisher(
-            TrafficLightMsg, 'traffic_light_result', 10
+            TrafficLightMsg, 'traffic_light_result', 1
         )
 
         self.traffic_sign_publisher = self.create_publisher(
-            TrafficSignMsg, 'traffic_sign_result', 10
+            TrafficSignMsg, 'traffic_sign_result', 1
         )
 
         self.bridge = CvBridge()
@@ -46,7 +46,19 @@ class VisionAI(Node):
 
         self.model = YOLO('best.pt')
         self.process_rate = 30.0    # 프로세스 루프 주기
-        self.conf_threshold = 0.25
+        self.conf_threshold = 0.50
+
+        self.traffic_light_labels = {
+            'green',
+            'left',
+            'stop',
+            'yellow'
+        }
+
+        self.traffic_sign_labels = {
+            'line1',
+            'line2'
+        }
 
         self.timer = self.create_timer(1.0 / self.process_rate, self.timer_callback)
 
@@ -113,20 +125,6 @@ class VisionAI(Node):
                     2
                 )
 
-                # =====================
-                # Center point
-                # =====================
-                center_x = int((x1 + x2) / 2)
-                center_y = int((y1 + y2) / 2)
-
-                cv2.circle(
-                    display_frame,
-                    (center_x, center_y),
-                    4,
-                    (0, 0, 255),
-                    -1
-                )
-
                 # 터미널 출력
                 self.get_logger().info(
                     f'Detected: {label}, '
@@ -140,10 +138,6 @@ class VisionAI(Node):
                 self.process_detection(
                     label,
                     confidence,
-                    x1,
-                    y1,
-                    x2,
-                    y2
                 )
 
         # =====================
@@ -200,69 +194,34 @@ class VisionAI(Node):
     # =========================================================
     def process_detection(self, label, confidence):
 
-        """
-        YOLO에서 검출된 객체를
-        TrafficLight / TrafficSign으로 분류하는 부분.
-
-        실제 TrafficLightMsg / TrafficSignMsg의
-        필드명에 맞춰 수정해야 함.
-        """
-
-        # -----------------------------------------------------
-        # Traffic Light
-        # -----------------------------------------------------
-        traffic_light_labels = [
-            'red',
-            'yellow',
-            'green',
-            'left',
-            'right',
-            'straight'
-        ]
-
-        if label.lower() in traffic_light_labels:
+        if label.lower() in self.traffic_light_labels:
 
             self.get_logger().info(
                 f'Traffic Light detected: {label}'
             )
 
-            # -------------------------------------------------
-            # TrafficLightMsg 필드에 맞춰 작성
-            # -------------------------------------------------
             msg = TrafficLightMsg()
 
-            # 예시:
-            #
-            # msg.label = label
-            # msg.confidence = confidence
-            #
-            # 실제 메시지 정의 확인 후 사용해야 함.
+            msg.label = label
+            msg.confidence = confidence
 
             self.traffic_light_publisher.publish(msg)
 
         # -----------------------------------------------------
         # Traffic Sign
         # -----------------------------------------------------
-        else:
+        elif label.lower() in self.traffic_sign_labels:
 
             self.get_logger().info(
                 f'Traffic Sign detected: {label}'
             )
 
-            # -------------------------------------------------
-            # TrafficSignMsg 필드에 맞춰 작성
-            # -------------------------------------------------
             msg = TrafficSignMsg()
 
-            # 예시:
-            #
-            # msg.label = label
-            # msg.confidence = confidence
-            #
-            # 실제 메시지 정의 확인 후 사용해야 함.
+            msg.label = label
+            msg.confidence = confidence
 
             self.traffic_sign_publisher.publish(msg)
-
 
 def main(args=None):
     rclpy.init(args=args)

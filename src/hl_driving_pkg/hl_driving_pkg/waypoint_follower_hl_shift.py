@@ -7,7 +7,7 @@ from sensor_msgs.msg import NavSatFix
 from ublox_msgs.msg import NavPVT
 from auto_driving_msgs.msg import SteerMsg
 from nav_msgs.msg import Path
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Vector3
 
 from rclpy.qos import QoSProfile
 from rclpy.qos import DurabilityPolicy
@@ -71,6 +71,13 @@ class WaypointFollower(Node):
         self.steer_msg.steer = 0.0
         self.steer_msg.is_ok = True
 
+        # LiDAR 고정 장애물 오차 보정 관련
+        self.vehicle_shift_x = 0.0
+        self.vehicle_shift_y = 0.0
+
+        self.parking_error_received = False
+        self.parking_rddf_corrected = False
+
         self.load_rddf()
 
         # =====================
@@ -101,6 +108,13 @@ class WaypointFollower(Node):
             TrafficSignMsg,
             '/traffic_sign_result',
             self.traffic_sign_callback,
+            10
+        )
+
+        self.parking_error_subscription = self.create_subscription(
+            Vector3,
+            '/parking_position_error',
+            self.parking_error_callback,
             10
         )
 
@@ -141,6 +155,92 @@ class WaypointFollower(Node):
         self.create_timer(0.5, self.publish_waypoints_path)
 
         self.get_logger().info('WaypointFollower start')
+
+    # 주차 trajectory 보정
+    def vehicle_error_to_global(self, dx_vehicle, dy_vehicle):
+
+        if self.ego_heading is None:
+            return None
+
+        heading = self.ego_heading
+
+        # 차량 좌표계 -> 글로벌(UTM) 좌표계 회전
+        dx_global = (
+            dx_vehicle * math.cos(heading) - dy_vehicle * math.sin(heading)
+        )
+
+        dy_global = (
+            dx_vehicle * math.sin(heading) + dy_vehicle * math.cos(heading))
+
+        return dx_global, dy_global
+
+    def correct_parking_rddf(self):
+
+        if not self.parking_error_received:
+            self.get_logger().warn(
+                '[PARKING CORRECTION] '
+                'No parking error received'
+            )
+            return
+
+        if self.ego_heading is None:
+            self.get_logger().warn(
+                '[PARKING CORRECTION] '
+                'No heading'
+            )
+            return
+
+        if self.parking_rddf_corrected:
+            return
+
+        # 1. 차량 좌표계 -> 글로벌 좌표계
+        result = self.vehicle_error_to_global(
+            self.vehicle_shift_x,
+            self.vehicle_shift_y
+        )
+
+        if result is None:
+            return
+
+        dx_global, dy_global = result
+
+        # 2. RDDF waypoint 전체 보정
+
+        corrected_waypoints = []
+
+        for x, y, flag in self.waypoints:
+
+            corrected_x = x + dx_global
+            corrected_y = y + dy_global
+
+            corrected_waypoints.append(
+                (
+                    corrected_x,
+                    corrected_y,
+                    flag
+                )
+            )
+
+        self.waypoints = corrected_waypoints
+
+        # 3. 보정 완료
+
+        self.parking_rddf_corrected = True
+
+        self.get_logger().info(
+            '\n'
+            '========================================\n'
+            '[PARKING RDDF CORRECTED]\n'
+            f'Vehicle Error : '
+            f'({self.vehicle_shift_x:.3f}, '
+            f'{self.vehicle_shift_y:.3f}) m\n'
+            f'Heading       : '
+            f'{math.degrees(self.ego_heading):.2f} deg\n'
+            f'Global Error  : '
+            f'({dx_global:.3f}, '
+            f'{dy_global:.3f}) m\n'
+            '========================================'
+        )
 
     # =====================================================
     # Load Waypoints CSV
@@ -322,6 +422,8 @@ class WaypointFollower(Node):
             else:
                 self.rddf_num = 3
 
+            self.parking_rddf_corrected = False
+
             self.get_logger().info(f'lidar_select = {self.lidar_select}')
             self.lidar_select = 0
 
@@ -356,11 +458,26 @@ class WaypointFollower(Node):
 
         self.load_rddf()
 
+        if self.rddf_num in [2, 3]:
+            self.correct_parking_rddf()
+
         return True
 
     # =====================================================
     # Callbacks
     # =====================================================
+
+    def parking_error_callback(self, msg: Vector3):
+        self.vehicle_shift_x = - msg.x
+        self.vehicle_shift_y = - msg.y
+
+        self.parking_error_received = True
+
+        self.get_logger().info(
+            f'[PARKING ERROR RECEIVED] '
+            f'vehicle_dx={self.vehicle_shift_x:.3f} m, '
+            f'vehicle_dy={self.vehicle_shift_y:.3f} m'
+        )
 
     def lidar_select_callback(self, msg: Int32):
         self.lidar_select = msg.data

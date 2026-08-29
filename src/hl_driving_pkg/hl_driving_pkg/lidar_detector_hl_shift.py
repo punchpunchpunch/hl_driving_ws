@@ -4,12 +4,14 @@ from rclpy.node import Node
 import numpy as np
 import time
 from collections import deque
+from sklearn.cluster import DBSCAN
 
 from sensor_msgs.msg import LaserScan
 from auto_driving_msgs.msg import SteerMsg
 from std_msgs.msg import Int32
 
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, Vector3
+
 from visualization_msgs.msg import Marker
 
 from rclpy.qos import QoSProfile
@@ -21,8 +23,22 @@ class LidarObstacleDetector(Node):
 
         self.t_parking_flag = 8 # 직각주차 플래그
         self.p_parking_flag = 9 # 평행주차 플래그
+        self.ref_obstacle_flag = 13
         self.slot_min_points = 5 # 막혀 있다고 판단하는 기준이 되는 포인트 수
         self.grid_size = 0.02
+        self.expected_obstacle_x = 1.00
+        self.expected_obstacle_y = 1.00
+
+        self.cluster_eps = 0.15
+        self.cluster_min_samples = 5
+
+        self.reference_max_distance = 1.0
+
+        self.reference_obstacle_x = None
+        self.reference_obstacle_y = None
+        self.error_x = 0
+        self.error_y = 0
+
 
         # Center ROI
         self.center_roi_x_min, self.center_roi_x_max = 0.1, 4.0
@@ -113,6 +129,12 @@ class LidarObstacleDetector(Node):
             10
         )
 
+        self.obstacle_error_publisher = self.create_publisher(
+            Vector3,
+            '/parking_position_error',
+            10
+        )
+
         qos = QoSProfile(depth=1)
         qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
         self.roi_pub = self.create_publisher(
@@ -142,6 +164,9 @@ class LidarObstacleDetector(Node):
 
         # 다운샘플링 (Voxel/Grid Filter 방식)
         points = self.grid_downsampling(points, self.grid_size)
+
+        if self.flag == self.ref_obstacle_flag:
+            self.measure_reference_obstacle(points)
 
         # ROI 필터링 및 구역별 감지
         self.process_roi(points)
@@ -368,6 +393,126 @@ class LidarObstacleDetector(Node):
             /parking_slot = 2 -> Slot 2 선택
             /parking_slot = 0 -> 아직 미결정
         """
+
+    def clustering(self, points):
+
+        if len(points) < self.cluster_min_samples:
+            return []
+
+        db = DBSCAN(eps=self.cluster_eps, min_samples=self.cluster_min_samples).fit(points)
+
+        labels = db.labels_
+
+        clusters = []
+
+        for label in np.unique(labels):
+
+            # -1 = noise
+            if label == -1:
+                continue
+
+            cluster = points[labels == label]
+
+            if len(cluster) >= self.cluster_min_samples:
+                clusters.append(cluster)
+
+        return clusters
+
+    def find_reference_obstacle(self, clusters):
+
+        if len(clusters) == 0:
+            return None
+
+
+        best_cluster = None
+        best_distance = float('inf')
+
+
+        for cluster in clusters:
+
+            # Cluster 대표 위치
+            cluster_x = np.median(cluster[:, 0])
+            cluster_y = np.median(cluster[:, 1])
+
+
+            # 예상 위치와 거리
+            distance = np.hypot(
+                cluster_x - self.reference_expected_x,
+                cluster_y - self.reference_expected_y
+            )
+
+
+            # 가장 가까운 장애물
+            if distance < best_distance:
+                best_distance = distance
+                best_cluster = cluster
+
+
+        # 너무 멀면 잘못된 장애물이라고 판단
+        if best_distance > self.reference_max_distance:
+
+            self.get_logger().warn(
+                f"[No valid obstacle] distance={best_distance:.2f}m"
+            )
+
+            return None
+        return best_cluster
+
+    def measure_reference_obstacle(self, points):
+
+        # 1. 전체 점군 DBSCAN
+        clusters = self.clustering(points)
+
+        if len(clusters) == 0:
+            return
+
+
+        # 2. 예상 위치와 가장 가까운 Cluster 선택
+        reference_cluster = self.find_reference_obstacle(
+            clusters
+        )
+
+        if reference_cluster is None:
+            return
+
+
+        # 3. Cluster 대표 위치
+        obstacle_x = np.median(reference_cluster[:, 0])
+        obstacle_y = np.median(reference_cluster[:, 1])
+
+
+        # 저장
+        self.reference_obstacle_x = obstacle_x
+        self.reference_obstacle_y = obstacle_y
+
+
+        # 예상 위치와의 오차
+        error_x = (obstacle_x - self.reference_expected_x)
+        error_y = (obstacle_y - self.reference_expected_y)
+
+        error_msg = Vector3()
+        error_msg.x = float(error_x)
+        error_msg.y = float(error_y)
+        error_msg.z = 0.0
+
+        self.obstacle_error_publisher.publish(error_msg)
+
+
+        self.get_logger().info(
+            f"\n"
+            f"[REFERENCE OBSTACLE]\n"
+            f"Expected : "
+            f"({self.reference_expected_x:.3f}, "
+            f"{self.reference_expected_y:.3f})\n"
+            f"Measured : "
+            f"({obstacle_x:.3f}, "
+            f"{obstacle_y:.3f})\n"
+            f"Error    : "
+            f"dx={error_x:.3f}, "
+            f"dy={error_y:.3f}\n"
+            f"Points   : "
+            f"{len(reference_cluster)}"
+        )
 
     def publish_roi(self):
         marker = Marker()
