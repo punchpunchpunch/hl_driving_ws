@@ -8,9 +8,10 @@ from rclpy.qos import qos_profile_sensor_data
 from cv_bridge import CvBridge
 
 import cv2
-import numpy as np
 import time
 
+import os
+from ament_index_python.packages import get_package_share_directory
 from ultralytics import YOLO
 
 class VisionAI(Node):
@@ -44,7 +45,8 @@ class VisionAI(Node):
 
         self.frame = None
 
-        self.model = YOLO('best.pt')
+        self.model = YOLO('/home/yeong/runs/detect/train/weights/best.pt')
+
         self.process_rate = 30.0    # 프로세스 루프 주기
         self.conf_threshold = 0.50
 

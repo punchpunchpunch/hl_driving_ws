@@ -20,12 +20,7 @@ class LidarObstacleDetector(Node):
 
         self.t_parking_flag = 8 # 직각주차 플래그
         self.p_parking_flag = 9 # 평행주차 플래그
-
-        self.center_min_points = 5
-        self.slow_min_points = 8
-        self.side_min_points = 8
         self.slot_min_points = 5 # 막혀 있다고 판단하는 기준이 되는 포인트 수
-
         self.grid_size = 0.02
 
         # Center ROI
@@ -213,7 +208,7 @@ class LidarObstacleDetector(Node):
             current_time = time.time()
             condition = False
             
-            if len(center_points) > self.center_min_points:
+            if len(center_points) > 5:
                     condition = True
                     print(len(center_points))
 
@@ -223,7 +218,7 @@ class LidarObstacleDetector(Node):
                     self.center_condition_start_time = current_time
 
                 # 3초 안 지났으면 정지 유지
-                if current_time - self.center_condition_start_time < self.center_hold_duration:
+                if current_time - self.center_condition_start_time < 6.0:
                     self.center_steer_msg.steer = 0.0
                     self.center_steer_msg.is_ok = True
                 else:
@@ -235,15 +230,15 @@ class LidarObstacleDetector(Node):
                 self.center_condition_start_time = None
                 self.center_steer_msg.is_ok = False
                     
-            if len(slow_points) > self.slow_min_points:
+            if len(slow_points) > 8:
                 self.slow_steer_msg.is_ok = True
 
-            if len(left_pts) > self.side_min_points and len(left_pts) > len(right_pts):
+            if len(left_pts) > 8 and len(left_pts) > len(right_pts):
                 #self.get_logger().info("Obstacle in Left !!!")
                 self.side_steer_msg.steer = 20.0 # 우측 조향
                 self.side_steer_msg.is_ok = True
             
-            elif len(right_pts) > self.side_min_points and len(right_pts) > len(left_pts):
+            elif len(right_pts) > 8 and len(right_pts) > len(left_pts):
                 #self.get_logger().info("Obstacle in Right !!!")
                 self.side_steer_msg.steer = -20.0 # 좌측 조향
                 self.side_steer_msg.is_ok = True
@@ -374,24 +369,23 @@ class LidarObstacleDetector(Node):
         """
 
     def publish_roi(self):
+        marker = Marker()
 
-        slow_marker = Marker()
+        marker.header.frame_id = "laser"
+        marker.header.stamp = self.get_clock().now().to_msg()
 
-        slow_marker.header.frame_id = "laser"
-        slow_marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "roi"
+        marker.id = 0
+        marker.type = Marker.LINE_STRIP
+        marker.action = Marker.ADD
 
-        slow_marker.ns = "roi"
-        slow_marker.id = 0
-        slow_marker.type = Marker.LINE_STRIP
-        slow_marker.action = Marker.ADD
+        marker.scale.x = 0.03  # 선 두께
 
-        slow_marker.scale.x = 0.03  # 선 두께
-
-        # 색상 + 투명도
-        slow_marker.color.r = 0.0
-        slow_marker.color.g = 0.0
-        slow_marker.color.b = 1.0
-        slow_marker.color.a = 1.0
+        # 색상 (빨간색 + 투명도)
+        marker.color.r = 0.0
+        marker.color.g = 0.0
+        marker.color.b = 1.0
+        marker.color.a = 1.0
 
         # ROI 좌표
         x_min = self.slow_roi_x_min
@@ -408,9 +402,9 @@ class LidarObstacleDetector(Node):
             Point(x=-x_min, y=y_min, z=0.0)
         ]
 
-        slow_marker.points = points
+        marker.points = points
 
-        self.roi_pub.publish(slow_marker)
+        self.roi_pub.publish(marker)
 
         t_parking_marker = Marker()
 

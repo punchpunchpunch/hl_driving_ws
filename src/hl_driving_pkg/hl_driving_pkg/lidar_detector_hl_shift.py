@@ -591,7 +591,7 @@ class LidarObstacleDetector(Node):
         p_parking_marker.header.stamp = self.get_clock().now().to_msg()
 
         p_parking_marker.ns = "roi"
-        p_parking_marker.id = 1
+        p_parking_marker.id = 2
         p_parking_marker.type = Marker.LINE_STRIP
         p_parking_marker.action = Marker.ADD
 
