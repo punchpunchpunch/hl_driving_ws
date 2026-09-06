@@ -58,8 +58,8 @@ class VisionAI(Node):
         }
 
         self.traffic_sign_labels = {
-            'line1',
-            'line2'
+            'go_line',
+            'no_line'
         }
 
         self.timer = self.create_timer(1.0 / self.process_rate, self.timer_callback)
