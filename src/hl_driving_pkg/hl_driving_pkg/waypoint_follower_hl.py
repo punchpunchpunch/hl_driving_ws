@@ -34,12 +34,12 @@ class WaypointFollower(Node):
         # =====================
         self.file_dir = os.path.expanduser('~/hl_driving_ws/src/hl_driving_pkg/hl_driving_pkg/waypoints')
         self.rddf_files = [
-            'waypoints_20260906_140102_RDDF1.csv',  #1 waypoints_20260819_115656.csv  waypoints_20260819_173627.csv긴급정지테스트 waypoints_20260820_165647.csv에스자회피테스트
-            'waypoints_20260906_141439_RDDF2.csv',  #2 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_160905.csv
-            'waypoints_20260906_141815_RDDF3.csv',  #3 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_161444.csv
-            'waypoints_20260906_142027_RDDF4.csv',  #4
-            'waypoints_20260906_143337_RDDF5.csv',  #5
-            'waypoints_20260906_144522_RDDF6.csv',  #6
+            'waypoints_20260915_134847.csv',  #1 waypoints_20260906_140102_RDDF1 for_t.csv
+            'waypoints_20260915_135008.csv',  #2 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_160905.csv
+            'waypoints_20260915_135212.csv',  #3 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_161444.csv
+            'waypoints_20260910_110430.csv',  #4
+            'waypoints_20260910_110610.csv',  #5
+            'waypoints_20260910_110756.csv',  #6
             'waypoints_20260906_144831_RDDF7.csv',  #7
             'waypoints_20260906_144959_RDDF8.csv'   #8
         ]
@@ -515,6 +515,7 @@ class WaypointFollower(Node):
         dx = tgt_x - ego_x
         dy = tgt_y - ego_y
         Ld = max(math.hypot(dx, dy), self.min_lookahead)
+        #print(Ld)
         #Ld = math.hypot(dx, dy)
 
         target_heading = math.atan2(dy, dx)

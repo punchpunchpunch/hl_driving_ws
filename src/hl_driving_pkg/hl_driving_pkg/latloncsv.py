@@ -2,8 +2,8 @@ import csv
 import utm
 import os
 
-input_file = os.path.expanduser('~/ros2_ws/src/auto_car_test_pkg/auto_car_test_pkg/waypoints/waypoints_20260304_160208.csv')
-output_file = os.path.expanduser('~/ros2_ws/src/auto_car_test_pkg/auto_car_test_pkg/waypoints/waypoints_20260304_160208.kml')
+input_file = os.path.expanduser('/home/yeong/hl_driving_ws/src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260906_144959_RDDF8.csv')
+output_file = os.path.expanduser('/home/yeong/hl_driving_ws/src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260906_144959_RDDF8.kml')
 
 utm_zone_number = 52
 utm_zone_letter = 'N'

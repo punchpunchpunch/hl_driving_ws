@@ -28,8 +28,8 @@ class CameraPublisher(Node):
             raise RuntimeError("Camera open failed")
 
         self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         #self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
         #self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
         self.cap.set(cv2.CAP_PROP_FPS, 30)
@@ -55,7 +55,7 @@ class CameraPublisher(Node):
 
         image_msg = self.bridge.cv2_to_imgmsg(frame, 'bgr8')
 
-        self.camera_pub.publish(image_msg)        
+        self.camera_pub.publish(image_msg)
 
 def main(args=None):
 

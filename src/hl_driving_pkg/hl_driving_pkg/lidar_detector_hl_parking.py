@@ -48,6 +48,26 @@ class LidarObstacleDetector(Node):
         self.p_slot1_x_min, self.p_slot1_x_max = 10.0, 15.0
         self.p_slot1_y_min, self.p_slot1_y_max = 0.0, 2.0
 
+        # Back ROI
+        self.back_roi_x_min = -2.5
+        self.back_roi_x_max = -0.8
+
+        self.back_left_y_min = 0.3
+        self.back_left_y_max = 1.0
+
+        self.back_right_y_min = -1.0
+        self.back_right_y_max = -0.0
+
+        # 충돌 방지 거리
+        self.back_danger_distance = 0.80
+        self.back_caution_distance = 2.00
+
+        # 최소 포인트 수
+        self.back_min_points = 1
+
+        # 최대 회피 조향각
+        self.back_max_steer = 20.0
+
 
         self.t_parking_target_slot = 0   # 0: 미결정, 1: Slot 1, 2: Slot 2
         self.t_parking_decided = False
@@ -168,6 +188,28 @@ class LidarObstacleDetector(Node):
         self.side_steer_msg.is_ok = False
         self.side_steer_msg.steer = 0.0
 
+        # ==========================================
+        # FLAG 1 : 후진 주차 충돌 방지
+        # ==========================================
+        if self.flag == 1:
+            back_steer, back_ok = self.process_back_obstacle(points)
+
+            self.get_logger().info(
+                f"[BACK RESULT] "
+                f"steer={back_steer:.2f}, "
+                f"ok={back_ok}"
+            )
+
+            self.side_steer_msg.steer = back_steer
+            self.side_steer_msg.is_ok = back_ok
+
+            self.lidar_side_steer_publisher.publish(
+                self.side_steer_msg
+            )
+
+            # FLAG 1에서는 일반 Side ROI 로직을 사용하지 않음
+            return
+        
         # Center ROI
         center_indices = (
             (points[:, 0] > self.center_roi_x_min) & (points[:, 0] < self.center_roi_x_max) &
@@ -422,6 +464,164 @@ class LidarObstacleDetector(Node):
                 1.0, 0.0, 0.0
             )
         )
+
+        # Back Left ROI
+        self.roi_pub.publish(
+            make_marker(
+                5,
+                self.back_roi_x_min,
+                self.back_roi_x_max,
+                self.back_left_y_min,
+                self.back_left_y_max,
+                1.0, 0.0, 1.0
+            )
+        )
+
+        # Back Right ROI
+        self.roi_pub.publish(
+            make_marker(
+                6,
+                self.back_roi_x_min,
+                self.back_roi_x_max,
+                self.back_right_y_min,
+                self.back_right_y_max,
+                1.0, 0.0, 1.0
+            )
+        )
+
+    def process_back_obstacle(self, points):
+        """
+        FLAG 1 후진 주차 충돌 방지
+
+        좌측 장애물  -> 우측 조향 (+)
+        우측 장애물  -> 좌측 조향 (-)
+
+        반환:
+            steer : 회피 조향각
+            is_ok : 조향 명령 사용 여부
+        """
+
+        if points.size == 0:
+            return 0.0, False
+
+        # -----------------------------
+        # Back Left ROI
+        # -----------------------------
+        left_indices = (
+            (points[:, 0] > self.back_roi_x_min) &
+            (points[:, 0] < self.back_roi_x_max) &
+            (points[:, 1] > self.back_left_y_min) &
+            (points[:, 1] < self.back_left_y_max)
+        )
+
+        left_points = points[left_indices]
+
+        # -----------------------------
+        # Back Right ROI
+        # -----------------------------
+        right_indices = (
+            (points[:, 0] > self.back_roi_x_min) &
+            (points[:, 0] < self.back_roi_x_max) &
+            (points[:, 1] > self.back_right_y_min) &
+            (points[:, 1] < self.back_right_y_max)
+        )
+
+        right_points = points[right_indices]
+
+        # 포인트가 너무 적으면 장애물로 판단하지 않음
+        left_valid = len(left_points) >= self.back_min_points
+        right_valid = len(right_points) >= self.back_min_points
+
+        # -----------------------------
+        # 최소 거리 계산
+        # -----------------------------
+        left_dist = np.inf
+        right_dist = np.inf
+
+        if left_valid:
+            left_dist = np.min(
+                np.sqrt(
+                    left_points[:, 0] ** 2 +
+                    left_points[:, 1] ** 2
+                )
+            )
+
+        if right_valid:
+            right_dist = np.min(
+                np.sqrt(
+                    right_points[:, 0] ** 2 +
+                    right_points[:, 1] ** 2
+                )
+            )
+
+        # -----------------------------
+        # 디버깅
+        # -----------------------------
+        if left_valid or right_valid:
+            self.get_logger().info(
+                f"[BACK] "
+                f"left={left_dist:.2f}m ({len(left_points)}pts), "
+                f"right={right_dist:.2f}m ({len(right_points)}pts)"
+            )
+
+        # -----------------------------
+        # 양쪽 모두 위험
+        # -----------------------------
+        if (
+            left_valid and right_valid and
+            left_dist < self.back_danger_distance and
+            right_dist < self.back_danger_distance
+        ):
+            self.get_logger().warn(
+                "[BACK] BOTH SIDES DANGER !!!"
+            )
+
+            # 양쪽 모두 막혀있으므로 한쪽으로 강제 조향하지 않음
+            return 0.0, False
+
+        # -----------------------------
+        # 왼쪽 장애물
+        # -----------------------------
+        if left_valid and left_dist < self.back_caution_distance:
+
+            # 가까울수록 큰 조향
+            ratio = (
+                self.back_caution_distance - left_dist
+            ) / (
+                self.back_caution_distance -
+                self.back_danger_distance
+            )
+
+            ratio = np.clip(ratio, 0.0, 1.0)
+
+            steer = self.back_max_steer * ratio
+
+            # 후진 시 좌측 장애물 -> 우측 조향
+            return steer, True
+
+        # -----------------------------
+        # 오른쪽 장애물
+        # -----------------------------
+        if right_valid and right_dist < self.back_caution_distance:
+
+            ratio = (
+                self.back_caution_distance - right_dist
+            ) / (
+                self.back_caution_distance -
+                self.back_danger_distance
+            )
+
+            ratio = np.clip(ratio, 0.0, 1.0)
+
+            steer = -self.back_max_steer * ratio
+
+            # 후진 시 우측 장애물 -> 좌측 조향
+            return steer, True
+
+        # -----------------------------
+        # 장애물 없음
+        # -----------------------------
+        return 0.0, False
 
 def main(args=None):
     rclpy.init(args=args)

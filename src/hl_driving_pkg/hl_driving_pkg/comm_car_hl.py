@@ -21,6 +21,8 @@ class CommCar(Node):
         self.gps_speed = 700        # 차량 속도(아두이노 코드에도 속도 제한 있음)
         self.lane_speed = 700
         self.side_speed = 300
+        self.side_back_speed = 200
+        self.parking_out_speed = 300
         self.fast_speed = 1000
         self.slow_speed = 400
         self.back_speed = 300
@@ -68,35 +70,35 @@ class CommCar(Node):
         # =====================
         self.gps_steer_subscription = self.create_subscription(
             SteerMsg,
-            'gps_steer',
+            '/gps_steer',
             self.gps_steer_callback,
             10 # 큐 크기
         )
 
         self.lane_steer_subscription = self.create_subscription(
             SteerMsg,
-            'lane_steer',
+            '/lane_steer',
             self.lane_steer_callback,
             10 # 큐 크기
         )
 
         self.lidar_side_steer_subscription = self.create_subscription(
             SteerMsg,
-            'lidar_side_steer',
+            '/lidar_side_steer',
             self.lidar_side_steer_callback,
             10 # 큐 크기
         )
 
         self.lidar_slow_steer_subscription = self.create_subscription(
             SteerMsg,
-            'lidar_slow_steer',
+            '/lidar_slow_steer',
             self.lidar_slow_steer_callback,
             10 # 큐 크기
         )
 
         self.lidar_center_steer_subscription = self.create_subscription(
             SteerMsg,
-            'lidar_center_steer',
+            '/lidar_center_steer',
             self.lidar_center_steer_callback,
             10 # 큐 크기
         )
@@ -169,9 +171,9 @@ class CommCar(Node):
     def control_loop(self):
 
         # 조향
-        if self.side_ok and self.flag == 7:     # lidar_side
+        if self.side_ok and (self.flag == 7 or self.flag == 1):     # lidar_side
             steer = self.side_steer
-            speed = self.side_speed
+            speed = self.parking_out_speed # !!!!!self.side_speed
             mode = 'side'
         elif self.gps_ok:                       # gps
             if self.flag == 1:
@@ -229,6 +231,10 @@ class CommCar(Node):
             speed = self.slow_speed
             mode = mode + ' slow'
 
+        if self.side_ok and self.flag == 1:     # lidar_side
+            speed = self.side_back_speed
+            mode = 'side'
+
         elif self.flag == 1: # 후진
             speed = self.back_speed
             mode = mode + ' back'
@@ -245,7 +251,7 @@ class CommCar(Node):
             speed = self.fast_speed
             mode = mode + ' fast'
     
-        hst = self.steer_to_hst(steer)
+        hst = self.steer_to_hst(-steer)
 
         # 후진
         '''
