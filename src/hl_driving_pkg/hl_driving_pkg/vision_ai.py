@@ -2,16 +2,15 @@ import rclpy
 from rclpy.node import Node
 
 from sensor_msgs.msg import Image
-from auto_driving_msgs.msg import TrafficLightMsg, TrafficSignMsg
+from std_msgs.msg import Int32
+from auto_driving_msgs.msg import TrafficLightMsg
 
 from rclpy.qos import qos_profile_sensor_data
 from cv_bridge import CvBridge
 
 import cv2
-import time
-
 import os
-from ament_index_python.packages import get_package_share_directory
+
 from ultralytics import YOLO
 
 class VisionAI(Node):
@@ -37,15 +36,19 @@ class VisionAI(Node):
             TrafficLightMsg, 'traffic_light_result', 1
         )
 
-        self.traffic_sign_publisher = self.create_publisher(
-            TrafficSignMsg, 'traffic_sign_result', 1
+        self.selected_lane_publisher = self.create_publisher(
+            Int32, '/selected_lane', 1
         )
 
         self.bridge = CvBridge()
 
         self.frame = None
 
-        self.model = YOLO('/home/yeong/runs/detect/train/weights/best.pt')
+        #self.model = YOLO('/home/yeong/runs/detect/train/weights/best.pt')
+
+        model_path = os.path.expanduser('~/hl_driving_ws/src/hl_driving_pkg/hl_driving_pkg/hl_model/best.pt')  # 09/18 버전
+
+        self.model = YOLO(model_path)
 
         self.process_rate = 30.0    # 프로세스 루프 주기
         self.conf_threshold = 0.50
@@ -57,14 +60,23 @@ class VisionAI(Node):
             'yellow'
         }
 
-        self.traffic_sign_labels = {
+        self.lane_sign_labels = {
             'go_line',
             'no_line'
         }
 
-        self.timer = self.create_timer(1.0 / self.process_rate, self.timer_callback)
+        self.selected_lane = 0
 
-        self.prev_time = time.time()
+        # 최근 프레임에서 검출된 차로 결과
+        self.lane_history = []
+
+        # 몇 번 연속 같은 결과가 나와야 확정할지
+        self.lane_confirm_count = 5
+
+        # 한번 차로를 선택하면 고정
+        self.lane_locked = False
+
+        self.timer = self.create_timer(1.0 / self.process_rate, self.timer_callback)
     
         self.get_logger().info('YOLO Node started')
 
@@ -85,6 +97,7 @@ class VisionAI(Node):
         display_frame = self.frame.copy()
 
         detection_count = 0
+        lane_detections = []
 
         for result in results:
             for box in result.boxes:
@@ -92,7 +105,7 @@ class VisionAI(Node):
 
                 cls = int(box.cls[0])
                 confidence = float(box.conf[0])
-                label = result.names[cls]
+                label = result.names[cls].lower()
 
                 # bounding box
                 x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
@@ -100,6 +113,14 @@ class VisionAI(Node):
                 y1 = int(y1)
                 x2 = int(x2)
                 y2 = int(y2)
+
+                if label in self.lane_sign_labels:
+
+                    lane_detections.append({
+                        'label': label,
+                        'confidence': confidence,
+                        'x1': x1
+                    })
 
                 # =====================
                 # Bounding Box
@@ -137,26 +158,14 @@ class VisionAI(Node):
                 # =================================================
                 # TrafficLight / TrafficSign 처리
                 # =================================================
-                self.process_detection(
+                self.process_traffic_light(
                     label,
                     confidence,
                 )
 
-        # =====================
-        # FPS
-        # =====================
-        current_time = time.time()
-        fps = 1.0 / (current_time - self.prev_time)
-        self.prev_time = current_time
-
-        cv2.putText(
-            display_frame,
-            f'FPS: {fps:.1f}',
-            (10, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (255, 255, 255),
-            2
+        self.process_lane_control(
+            lane_detections,
+            display_frame
         )
 
         cv2.putText(
@@ -194,7 +203,7 @@ class VisionAI(Node):
     # =========================================================
     # Detection processing
     # =========================================================
-    def process_detection(self, label, confidence):
+    def process_traffic_light(self, label, confidence):
 
         if label.lower() in self.traffic_light_labels:
 
@@ -209,21 +218,59 @@ class VisionAI(Node):
 
             self.traffic_light_publisher.publish(msg)
 
-        # -----------------------------------------------------
-        # Traffic Sign
-        # -----------------------------------------------------
-        elif label.lower() in self.traffic_sign_labels:
+    def process_lane_control(self, lane_detections, display_frame):
+
+        if self.lane_locked:
+            return
+
+        # 3개 LCS 모두 검출되어야 판단
+        if len(lane_detections) != 3:
+            return
+
+        # 왼쪽 -> 오른쪽 정렬
+        lane_detections.sort(key=lambda d: d['x1'])
+
+        lcs1 = lane_detections[0]
+        lcs2 = lane_detections[1]
+
+        if lcs1['label'] == 'go_line':
+            candidate_lane = 1
+
+        elif lcs2['label'] == 'go_line':
+            candidate_lane = 2
+
+        # 첫째 둘째 둘 다 no_line
+        else:
+            return
+
+        # ---------------------------------
+        # 5 프레임 안정화
+        # ---------------------------------
+        self.lane_history.append(candidate_lane)
+
+        if len(self.lane_history) > 5:
+            self.lane_history.pop(0)
+
+        if len(self.lane_history) < 5:
+            return
+
+        # 5프레임 모두 같은 차로
+        if all(
+            lane == candidate_lane
+            for lane in self.lane_history
+        ):
+
+            self.selected_lane = candidate_lane
+            self.lane_locked = True
+
+            msg = Int32()
+            msg.data = self.selected_lane
+
+            self.selected_lane_publisher.publish(msg)
 
             self.get_logger().info(
-                f'Traffic Sign detected: {label}'
+                f'[LANE SELECTED] {self.selected_lane}차로'
             )
-
-            msg = TrafficSignMsg()
-
-            msg.label = label
-            msg.confidence = confidence
-
-            self.traffic_sign_publisher.publish(msg)
 
 def main(args=None):
     rclpy.init(args=args)

@@ -34,12 +34,12 @@ class WaypointFollower(Node):
         # =====================
         self.file_dir = os.path.expanduser('~/hl_driving_ws/src/hl_driving_pkg/hl_driving_pkg/waypoints')
         self.rddf_files = [
-            'waypoints_20260915_134847.csv',  #1 waypoints_20260906_140102_RDDF1 for_t.csv
-            'waypoints_20260915_135008.csv',  #2 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_160905.csv
-            'waypoints_20260915_135212.csv',  #3 src/hl_driving_pkg/hl_driving_pkg/waypoints/waypoints_20260812_161444.csv
-            'waypoints_20260910_110430.csv',  #4
-            'waypoints_20260910_110610.csv',  #5
-            'waypoints_20260910_110756.csv',  #6
+            'waypoints_20260906_140102_RDDF1.csv',  #1 waypoints_20260906_140102_RDDF1 for_t.csv
+            'waypoints_20260906_141439_RDDF2.csv',  #2
+            'waypoints_20260906_141815_RDDF3.csv',  #3
+            'waypoints_20260906_142027_RDDF4.csv',  #4
+            'waypoints_20260906_143337_RDDF5.csv',  #5
+            'waypoints_20260906_144522_RDDF6.csv',  #6
             'waypoints_20260906_144831_RDDF7.csv',  #7
             'waypoints_20260906_144959_RDDF8.csv'   #8
         ]
@@ -56,8 +56,7 @@ class WaypointFollower(Node):
         self.lidar_select = 0
         self.rddf_finished = False
 
-        self.lane_select = ""
-        self.lane_confidence = 0.0
+        self.lane_select = 0
 
         self.current_group = 0
         self.waypoint_groups = []
@@ -97,10 +96,10 @@ class WaypointFollower(Node):
             10
         )
 
-        self.traffic_sign_subscription = self.create_subscription(
-            TrafficSignMsg,
-            '/traffic_sign_result',
-            self.traffic_sign_callback,
+        self.last_lane_subscription = self.create_subscription(
+            Int32,
+            '/selected_lane',
+            self.lane_select_callback,
             10
         )
 
@@ -341,11 +340,13 @@ class WaypointFollower(Node):
 
         elif self.rddf_num == 5 or self.rddf_num == 6:
             # 7번 RDDF
-            if self.lane_select == 'lane1':
+            if self.lane_select == 1:
                 self.rddf_num = 7
             # 8번 RDDF
-            else:
+            elif self.lane_select == 2:
                 self.rddf_num = 8
+            else:
+                self.rddf_num = 7
 
             self.get_logger().info(f'lidar_select = {self.lidar_select}')
             self.lidar_select = 0
@@ -369,12 +370,11 @@ class WaypointFollower(Node):
             f'LiDAR slot selection updated: {self.lidar_select}'
         )
 
-    def traffic_sign_callback(self, msg: TrafficSignMsg):
-        self.lane_select = msg.label
-        self.lane_confidence = msg.confidence
+    def lane_select_callback(self, msg: Int32):
+        self.lane_select = msg.data
 
         self.get_logger().info(
-            f'last lane updated: {self.lane_select}'
+            f'last lane selection updated: {self.lane_select}'
         )
 
     def gps_callback(self, msg: NavSatFix):
