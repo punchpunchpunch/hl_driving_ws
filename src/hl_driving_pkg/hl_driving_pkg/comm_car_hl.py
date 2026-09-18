@@ -27,7 +27,8 @@ class CommCar(Node):
         self.slow_speed = 400
         self.back_speed = 300
         self.stop_speed = 0
-        self.stop_time = 4.0
+        self.hill_stop_time = 4.0
+        self.parking_stop_time = 4.0
         
         self.gps_ok = False
         self.lane_ok = False
@@ -198,7 +199,7 @@ class CommCar(Node):
         if self.flag == 2:   # 경사로 정지
             if self.stop_start_time is None:
                 self.stop_start_time = time.time()
-            if time.time() - self.stop_start_time < self.stop_time:
+            if time.time() - self.stop_start_time < self.hill_stop_time:
                 speed = self.stop_speed
                 mode = mode + ' hill_stop'
             else:
@@ -208,7 +209,7 @@ class CommCar(Node):
         elif self.flag == 10:  # 주차 정지
             if self.stop_start_time is None:
                 self.stop_start_time = time.time()
-            if time.time() - self.stop_start_time < self.stop_time:
+            if time.time() - self.stop_start_time < self.parking_stop_time:
                 speed = self.stop_speed
                 mode = mode + ' parking_stop'
             else:
