@@ -252,7 +252,7 @@ class CommCar(Node):
             speed = self.fast_speed
             mode = mode + ' fast'
     
-        hst = self.steer_to_hst(-steer)
+        hst = self.steer_to_hst(steer)
 
         # 후진
         '''

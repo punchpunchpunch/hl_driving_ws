@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+    <name>Waypoints</name>
+    <Style id="yellowLineGreenPoly">
+        <LineStyle>
+            <color>7f00ffff</color>
+            <width>4</width>
+        </LineStyle>
+        <PolyStyle>
+            <color>7f00ff00</color>
+        </PolyStyle>
+    </Style>
+    <Placemark>
+        <name>Path</name>
+        <styleUrl>#yellowLineGreenPoly</styleUrl>
+        <LineString>
+            <coordinates>
+127.10779789988925,37.28905940540493,0
+127.10779759989077,37.28906220540433,0
+127.10779769989179,37.28906450540554,0
+127.10779749988875,37.2890664054036,0
+
+            </coordinates>
+        </LineString>
+    </Placemark>
+</Document>
+</kml>

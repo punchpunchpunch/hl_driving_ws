@@ -45,7 +45,7 @@ class LidarObstacleDetector(Node):
         self.t_slot1_y_min, self.t_slot1_y_max = 0.0, 5.0
 
         # P-Parking ROI
-        self.p_slot1_x_min, self.p_slot1_x_max = 10.0, 15.0
+        self.p_slot1_x_min, self.p_slot1_x_max = 14.0, 19.0
         self.p_slot1_y_min, self.p_slot1_y_max = 0.0, 2.0
 
         # Back ROI
