@@ -232,7 +232,7 @@ class CommCar(Node):
             speed = self.slow_speed
             mode = mode + ' slow'
 
-        if self.side_ok and self.flag == 1:     # lidar_side
+        elif self.side_ok and self.flag == 1:     # lidar_side
             speed = self.side_back_speed
             mode = 'side'
 
