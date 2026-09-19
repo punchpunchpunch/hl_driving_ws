@@ -161,7 +161,7 @@ class CommCar(Node):
         self.traffic_light = msg.label
         self.traffic_light_confidence = msg.confidence
 
-        if msg.label in ['red', 'yellow']:
+        if msg.label in ['stop', 'yellow']:
             self.traffic_light_stop = True
         else:
             self.traffic_light_stop = False
@@ -222,7 +222,7 @@ class CommCar(Node):
 
         elif self.traffic_light_stop and self.flag == 3: # 신호등 정지
             speed = self.stop_speed
-            mode = mode + ' red_light'
+            mode = mode + ' yellow_red_light'
 
         elif self.slow_ok and self.flag == 4:
             speed = self.slow_speed

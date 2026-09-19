@@ -46,7 +46,8 @@ class VisionAI(Node):
 
         #self.model = YOLO('/home/yeong/runs/detect/train/weights/best.pt')
 
-        model_path = os.path.expanduser('~/hl_driving_ws/src/hl_driving_pkg/hl_driving_pkg/hl_model/best.pt')  # 09/18 버전
+        # model_path = os.path.expanduser('~/hl_driving_ws/src/hl_driving_pkg/hl_driving_pkg/hl_model/best_ver3.pt')  # 09/18 버전
+        model_path = os.path.expanduser('~/hl_driving_ws/src/hl_driving_pkg/hl_driving_pkg/hl_model/best_ver4.pt')  # 09/18 버전
 
         self.model = YOLO(model_path)
 
@@ -223,8 +224,8 @@ class VisionAI(Node):
         if self.lane_locked:
             return
 
-        # 3개 LCS 모두 검출되어야 판단
-        if len(lane_detections) != 3:
+        # LCS 2개 이상 검출되어야 판단
+        if len(lane_detections) == 1:
             return
 
         # 왼쪽 -> 오른쪽 정렬
