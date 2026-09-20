@@ -76,6 +76,7 @@ class VisionAI(Node):
 
         # 한번 차로를 선택하면 고정
         self.lane_locked = False
+        self.stop_yolo = False
 
         self.timer = self.create_timer(1.0 / self.process_rate, self.timer_callback)
     
@@ -91,6 +92,8 @@ class VisionAI(Node):
 
     def timer_callback(self):
         if self.frame is None:
+            return
+        if self.stop_yolo:
             return
         
         results = self.model(self.frame, conf=self.conf_threshold, verbose=False)
@@ -224,8 +227,8 @@ class VisionAI(Node):
         if self.lane_locked:
             return
 
-        # LCS 2개 이상 검출되어야 판단
-        if len(lane_detections) == 1:
+        # LCS 3개가 아니면 검출되어야 판단
+        if len(lane_detections) != 3:
             return
 
         # 왼쪽 -> 오른쪽 정렬
@@ -260,6 +263,7 @@ class VisionAI(Node):
             lane == candidate_lane
             for lane in self.lane_history
         ):
+            self.stop_yolo = True
 
             self.selected_lane = candidate_lane
             self.lane_locked = True

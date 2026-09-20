@@ -50,7 +50,7 @@ class LidarObstacleDetector(Node):
 
         # Back ROI
         self.back_roi_x_min = -3.0
-        self.back_roi_x_max = -0.8
+        self.back_roi_x_max = -1.0
 
         self.back_left_y_min = 0.3
         self.back_left_y_max = 1.3
